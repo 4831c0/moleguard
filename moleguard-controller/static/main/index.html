@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>:3</title>
+</head>
+<body>
+    <script>
+        (async ()=>{
+            const token = localStorage.getItem('token');
+            const req = await fetch('/private/static/main/', {
+                headers: {
+                    'Authorization': token
+                }
+            });
+
+            function setInnerHtml(elm, html) {
+                elm.innerHTML = html;
+                Array.from(elm.querySelectorAll("script")).forEach(oldScript => {
+                    const newScript = document.createElement("script");
+                    Array.from(oldScript.attributes)
+                        .forEach(attr => newScript.setAttribute(attr.name, attr.value));
+                    newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
+            }
+
+            document.body.innerHTML = await req.text();
+            for (const script of document.body.querySelectorAll('script')) {
+                eval(script.innerHTML);
+            }
+        })();
+    </script>
+</body>
+</html>

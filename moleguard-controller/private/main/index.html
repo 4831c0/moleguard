@@ -1,0 +1,88 @@
+<script>
+    const token = localStorage.getItem('token');
+
+    async function get(url) {
+        const req = await fetch(url, {
+            headers: {
+                'Authorization': token
+            }
+        });
+        return await req.text();
+    }
+
+    async function post(url, body) {
+        const req = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': token,
+            },
+            body: JSON.stringify(body),
+        });
+        return await req.text();
+    }
+
+    function escape(content) {
+        return content
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    window.downloadConfig = async (nodeId) => {
+        console.log(nodeId);
+        const config = await get(`/${nodeId}/config`);
+
+        const link = document.createElement("a");
+        link.download = `wg-${nodeId}.conf`;
+        link.href = `data:text/plain;base64,${btoa(config)}`;
+        link.click();
+    }
+
+    window.changeRelay = async (nodeId, dropdownId) => {
+        const server = document.getElementById(dropdownId).value;
+        await post(`/${nodeId}/relay`, {
+            server
+        });
+
+        location.reload();
+    }
+
+    (async () => {
+        const relays = JSON.parse(await get('/relays')).filter(v => v.includes('-wg-'));
+        let relayDropdown = '<select>';
+        for (const relay of relays) {
+            relayDropdown += `<option value="${relay}">${relay}</option>`;
+        }
+        relayDropdown += '</select>';
+
+        const nodes = {};
+        const nodeIds = JSON.parse(await get('/nodes'));
+        let html = '';
+
+        for (const nodeId of nodeIds) {
+            const pk = await get(`/${nodeId}/pk`);
+            const node = JSON.parse(await get(`/${nodeId}/relay`));
+            nodes[nodeId] = node;
+
+            html += `<div>
+<h3>${escape(nodeId)} - ${escape(node.server)}</h3>
+<p>Public key: ${pk}</p>
+<button onclick="window.downloadConfig('${escape(nodeId)}');">Download wg config</button> <button onclick="window.changeRelay('${escape(nodeId)}', '${escape(nodeId)}-relay');">Change relay</button> ${relayDropdown.replace('<select>', '<select id="' + escape(nodeId) + '-relay">').replace('<option value="' + escape(node.server) + '">', '<option value="' + escape(node.server) + '" selected="selected">')} <br />
+<br />
+<code>
+sudo wg-quick up /home/&lt;username&gt;/Downloads/wg-${nodeId}.conf
+</code> <br /> <br />
+OR <br /> <br />
+<code>
+sudo mv wg-${nodeId}.conf /etc/wireguard/<br />
+sudo wg-quick up wg-${nodeId}
+</code> <br />
+</div>`;
+        }
+
+        document.getElementById('node-elements').innerHTML += html;
+    })();
+</script>
+
+<div id="node-elements"></div>

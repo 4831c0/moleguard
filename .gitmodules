@@ -1,0 +1,3 @@
+[submodule "moleguard-node/wg-tools"]
+	path = moleguard-node/wg-tools
+	url = https://github.com/mullvad/wg-tools

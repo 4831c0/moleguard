@@ -1,0 +1,30 @@
+services:
+  node-1:
+    build: .
+    container_name: node-1
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - SERVERURL=127.0.0.1
+      - SERVERPORT=51820
+      - PEERS=128
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.13.0
+      - ALLOWEDIPS=0.0.0.0/0
+      - PERSISTENTKEEPALIVE_PEERS=
+      - LOG_CONFS=true
+      - TOKEN=${TOKEN}
+      - MULLVAD_ACCOUNT_NUMBER=${MULLVAD_ACCOUNT_NUMBER}
+      - DEFAULT_RELAY=se-mma-wg-005
+    volumes:
+      - ./cache/node_1:/root/.config/mullvad:rw
+      - ./config/node_1:/config:rw
+    ports:
+      - "3000:8888"
+      - "51820:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
