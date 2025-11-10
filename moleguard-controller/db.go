@@ -17,6 +17,18 @@ func initDB() *sql.DB {
 	if err != nil {
 		log.Fatal(err)
 	}
+	_, err = db.Exec(`create table if not exists device(
+		id int,
+		node text,
+		user_token text,
+		config text,
+		ip text,
+		foreign key(user_token) references users(token),
+		primary key (id, node)
+	)`)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	return db
 }

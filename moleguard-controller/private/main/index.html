@@ -21,6 +21,17 @@
         return await req.text();
     }
 
+    async function deleteReq(url, body) {
+        const req = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': token,
+            },
+            body: JSON.stringify(body),
+        });
+        return await req.text();
+    }
+
     function escape(content) {
         return content
             .replace(/</g, '&lt;')
@@ -29,9 +40,19 @@
             .replace(/'/g, '&#039;');
     }
 
-    window.downloadConfig = async (nodeId) => {
-        console.log(nodeId);
-        const config = await get(`/${nodeId}/config`);
+    window.addDevice = async (nodeId) => {
+        await post(`/${nodeId}/device`);
+        location.reload();
+    }
+    window.deleteDevice = async (nodeId, deviceId) => {
+        await deleteReq(`/${nodeId}/device`, {
+            'device_id': deviceId,
+        });
+        location.reload();
+    }
+
+    window.downloadConfig = (nodeId, i) => {
+        const {config} = window.deviceMap.get(nodeId)[i];
 
         const link = document.createElement("a");
         link.download = `wg-${nodeId}.conf`;
@@ -64,6 +85,7 @@
         relayDropdown += '</select>';
 
         const nodes = {};
+        window.deviceMap = new Map();
         const nodeIds = JSON.parse(await get('/nodes')).sort();
         let html = '';
 
@@ -72,11 +94,28 @@
             const node = JSON.parse(await get(`/${nodeId}/relay`));
             nodes[nodeId] = node;
 
+            const devices = JSON.parse(await get(`/${nodeId}/device`));
+            deviceMap.set(nodeId, devices);
+
+            let devicesHtml = '';
+
+            for (let i = 0; i < devices.length; i++) {
+                const device = devices[i];
+                devicesHtml += `<p>${escape(device.id.toString())}. ${escape(device.ip)} <button onclick="window.downloadConfig('${escape(nodeId)}', ${i});">Download config</button> <button onclick="window.deleteDevice('${escape(nodeId)}', ${device.id})">Remove device</button></p>`;
+            }
+
             html += `<div>
 <h3>${escape(nodeId)} - ${escape(node.server)}</h3>
 <p>Public key: ${pk}</p>
-<button onclick="window.downloadConfig('${escape(nodeId)}');">Download wg config</button> <button onclick="window.changeRelay('${escape(nodeId)}', '${escape(nodeId)}-relay');">Change relay</button> ${relayDropdown.replace('<select>', '<select id="' + escape(nodeId) + '-relay">').replace('<option value="' + escape(node.server) + '">', '<option value="' + escape(node.server) + '" selected="selected">')} <br />
+<button onclick="window.changeRelay('${escape(nodeId)}', '${escape(nodeId)}-relay');">Change relay</button> ${relayDropdown.replace('<select>', '<select id="' + escape(nodeId) + '-relay">').replace('<option value="' + escape(node.server) + '">', '<option value="' + escape(node.server) + '" selected="selected">')} <br />
 <br />
+
+<hr />
+<h4>Devices&nbsp; <button onclick="window.addDevice('${escape(nodeId)}');">Add device</button></h4>
+${devicesHtml}
+
+<br />
+<hr />
 <code>
 sudo wg-quick up /home/&lt;username&gt;/Downloads/wg-${nodeId}.conf
 </code> <br /> <br />
@@ -87,6 +126,8 @@ sudo wg-quick up wg-${nodeId}
 </code> <br />
 </div>`;
         }
+
+        console.log(deviceMap);
 
         document.getElementById('node-elements').innerHTML += html;
     })();

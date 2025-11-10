@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -56,6 +59,16 @@ type MullvadRelay struct {
 	SshFingerprintMd5    string        `json:"ssh_fingerprint_md5,omitempty"`
 }
 
+type Device struct {
+	Id     int    `json:"id"`
+	Config string `json:"config"`
+	Ip     string `json:"ip"`
+}
+
+type DeviceById struct {
+	DeviceId int `json:"device_id"`
+}
+
 func check(err error) {
 	if err != nil {
 		panic(err)
@@ -76,15 +89,51 @@ func authMiddleware(next http.Handler) http.Handler {
 		rows, err := db.Query("SELECT * FROM users WHERE token = ?", token)
 		check(err)
 
-		defer rows.Close()
-
 		if !rows.Next() {
 			w.WriteHeader(http.StatusUnauthorized)
+
+			rows.Close()
 			return
 		}
 
+		rows.Close()
+
 		next.ServeHTTP(w, r)
 	})
+}
+
+func getNextFreeId(node string) (int, error) {
+	rows, err := db.Query("select id from device where node = ?", node)
+	if err != nil {
+		return -1, err
+	}
+
+	defer rows.Close()
+
+	hasNext := rows.Next()
+	if !hasNext {
+		return 1, nil
+	}
+
+	var taken []int
+
+	for hasNext {
+		var n int
+		err = rows.Scan(&n)
+		if err != nil {
+			return -1, err
+		}
+		taken = append(taken, n)
+		hasNext = rows.Next()
+	}
+
+	for i := 1; i <= 254; i++ {
+		if !slices.Contains(taken, i) {
+			return i, nil
+		}
+	}
+
+	return -1, errors.New("could not find a free id")
 }
 
 func main() {
@@ -198,27 +247,86 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write(respBytes)
 	})))
-	mux.Handle("GET /{node}/config", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /{node}/device", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rows, err := db.Query("select id, user_token, config, ip from device where node = ? and user_token = ?",
+			r.PathValue("node"),
+			r.Header.Get("Authorization"),
+		)
+		check(err)
+
+		defer rows.Close()
+
+		devices := make([]Device, 0)
+
+		for rows.Next() {
+			var device Device
+			var ignored string
+			check(rows.Scan(&device.Id, &ignored, &device.Config, &device.Ip))
+			_ = ignored
+
+			devices = append(devices, device)
+		}
+
+		devicesJson, err := json.Marshal(&devices)
+		check(err)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(devicesJson)
+	})))
+	mux.Handle("POST /{node}/device", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		node, ok := config.Nodes[r.PathValue("node")]
 
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		r, err := http.NewRequest("GET", "http://"+node.Host+"/config", nil)
+
+		id, err := getNextFreeId(r.PathValue("node"))
 		check(err)
 
-		r.Header.Set("Authorization", node.Token)
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/config?id=%d", node.Host, id), nil)
+		check(err)
 
-		resp, err := http.DefaultClient.Do(r)
+		req.Header.Set("Authorization", node.Token)
+
+		resp, err := http.DefaultClient.Do(req)
 		check(err)
 
 		defer resp.Body.Close()
 		respBytes, err := io.ReadAll(resp.Body)
 		check(err)
 
+		conf := strings.ReplaceAll(string(respBytes), "Endpoint = 127.0.0.1:51820", "Endpoint = "+node.TrueEndpoint)
+
+		userToken := r.Header.Get("Authorization")
+
+		confLines := strings.Split(conf, "\n")
+		ip := "N/A"
+		for _, line := range confLines {
+			if strings.HasPrefix(line, "Address = ") {
+				ip = strings.TrimPrefix(line, "Address = ")
+				break
+			}
+		}
+
+		_, err = db.Exec("insert into device values(?, ?, ?, ?, ?)", id, r.PathValue("node"), userToken, conf, ip)
+		check(err)
+
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(strings.ReplaceAll(string(respBytes), "Endpoint = 127.0.0.1:51820", "Endpoint = "+node.TrueEndpoint)))
+		w.Write([]byte(fmt.Sprintf("%d", id)))
+	})))
+	mux.Handle("DELETE /{node}/device", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqBytes, err := io.ReadAll(r.Body)
+		check(err)
+
+		var deviceId DeviceById
+		check(json.Unmarshal(reqBytes, &deviceId))
+
+		_, err = db.Exec("delete from device where id = ? and node = ?", deviceId.DeviceId, r.PathValue("node"))
+		check(err)
+
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("OK"))
 	})))
 	mux.Handle("GET /{node}/relay", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		node, ok := config.Nodes[r.PathValue("node")]

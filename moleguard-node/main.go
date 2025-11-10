@@ -10,8 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -88,26 +88,11 @@ func main() {
 		}
 	}()
 
-	i := 0
-	maxI := 0
-	var iMu sync.Mutex
-
-	configFiles, err := os.ReadDir("/config")
-	check(err)
-
-	for _, file := range configFiles {
-		if strings.Contains(file.Name(), "peer") {
-			maxI++
-		}
-	}
-
 	http.HandleFunc("GET /relay", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != token {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-
-		check(err)
 
 		jsonBytes, err := json.Marshal(Relay{Server: activeRelay})
 		check(err)
@@ -145,12 +130,9 @@ func main() {
 			return
 		}
 
-		iMu.Lock()
-		defer iMu.Unlock()
-		i++
-		if i >= maxI {
-			i = 1
-		}
+		q := r.URL.Query()
+		i, err := strconv.Atoi(q.Get("id"))
+		check(err)
 
 		confBytes, err := os.ReadFile(fmt.Sprintf("/config/peer%d/peer%d.conf", i, i))
 		check(err)
