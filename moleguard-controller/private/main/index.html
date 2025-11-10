@@ -64,7 +64,7 @@
         relayDropdown += '</select>';
 
         const nodes = {};
-        const nodeIds = JSON.parse(await get('/nodes'));
+        const nodeIds = JSON.parse(await get('/nodes')).sort();
         let html = '';
 
         for (const nodeId of nodeIds) {
