@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -35,6 +36,34 @@ func run(c string, args ...string) error {
 	return cmd.Run()
 }
 
+func netCheck() bool {
+	conn, err := net.Dial("tcp", "1.1.1.1:443")
+	if err == nil {
+		conn.Close()
+		return true
+	}
+
+	conn, err = net.Dial("tcp", "google.com:443")
+	if err == nil {
+		conn.Close()
+		return true
+	}
+
+	conn, err = net.Dial("tcp", "github.com:443")
+	if err == nil {
+		conn.Close()
+		return true
+	}
+
+	conn, err = net.Dial("tcp", "cloudflare.com:443")
+	if err == nil {
+		conn.Close()
+		return true
+	}
+
+	return false
+}
+
 func main() {
 	token := os.Getenv("TOKEN")
 	defaultRelay := os.Getenv("DEFAULT_RELAY")
@@ -50,15 +79,12 @@ func main() {
 		for {
 			time.Sleep(5 * time.Second)
 
-			resp, err := http.Get("https://1.1.1.1")
-			if err != nil {
-				log.Println("Failed to reach 1.1.1.1")
+			if !netCheck() {
+				log.Println("Failed to reach internet")
 				log.Println("Reconnecting to mullvad")
 				check(mullvadChange(activeRelay, confDir))
 				time.Sleep(10 * time.Second)
 			}
-
-			resp.Body.Close()
 		}
 	}()
 
@@ -155,7 +181,7 @@ func main() {
 		check(err)
 
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(pubKey))
+		w.Write(pubKey)
 	})
 
 	log.Println("Listening on http://localhost:8888")
