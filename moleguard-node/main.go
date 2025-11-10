@@ -17,6 +17,7 @@ import (
 )
 
 var wgQuick = "/usr/bin/wg-quick"
+var iptables = "/usr/sbin/iptables"
 
 func check(err error) {
 	if err != nil {
@@ -92,7 +93,60 @@ func downAll(confDir string) error {
 	}
 
 	for _, file := range files {
-		_ = exec.Command(wgQuick, "down", file.Name()).Run()
+		_ = exec.Command(wgQuick, "down", path.Join(confDir, file.Name())).Run()
+	}
+
+	return nil
+}
+
+func iptablesSetup(newRelay string) error {
+	// Forwarding
+	if err := exec.Command(iptables, "-A", "FORWARD", "-o", "eth0@if20", "!", "-d", "10.13.13.1/24", "-j", "REJECT").Run(); err != nil {
+		return err
+	}
+	if err := exec.Command(iptables, "-A", "FORWARD", "-i", newRelay, "-j", "ACCEPT").Run(); err != nil {
+		return err
+	}
+	if err := exec.Command(iptables, "-A", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run(); err != nil {
+		return err
+	}
+	if err := exec.Command(iptables, "-A", "FORWARD", "-j", "REJECT").Run(); err != nil {
+		return err
+	}
+
+	// NAT
+
+	if err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "eth0@if20", "-j", "MASQUERADE").Run(); err != nil {
+		return err
+	}
+	if err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", newRelay, "-j", "MASQUERADE").Run(); err != nil {
+		return err
+	}
+
+	return nil
+}
+func iptablesTeardown(oldRelay string) error {
+	// Forwarding
+	if err := exec.Command(iptables, "-D", "FORWARD", "-o", "eth0@if20", "!", "-d", "10.13.13.1/24", "-j", "REJECT").Run(); err != nil {
+		return err
+	}
+	if err := exec.Command(iptables, "-D", "FORWARD", "-i", oldRelay, "-j", "ACCEPT").Run(); err != nil {
+		return err
+	}
+	if err := exec.Command(iptables, "-D", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run(); err != nil {
+		return err
+	}
+	if err := exec.Command(iptables, "-D", "FORWARD", "-j", "REJECT").Run(); err != nil {
+		return err
+	}
+
+	// NAT
+
+	if err := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "eth0@if20", "-j", "MASQUERADE").Run(); err != nil {
+		return err
+	}
+	if err := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", oldRelay, "-j", "MASQUERADE").Run(); err != nil {
+		return err
 	}
 
 	return nil
@@ -106,6 +160,7 @@ func main() {
 
 	check(downAll(confDir))
 	check(run(wgQuick, "up", path.Join(confDir, activeRelay+".conf")))
+	check(iptablesSetup(activeRelay))
 
 	i := 0
 	maxI := 0
@@ -147,10 +202,19 @@ func main() {
 		var relay Relay
 		check(json.Unmarshal(body, &relay))
 
-		activeRelay = relay.Server
-
+		log.Println("Tearing down old iptables rules")
+		check(iptablesTeardown(activeRelay))
+		log.Println("Disconnecting from all relays")
 		check(downAll(confDir))
+
+		activeRelay = relay.Server
+		log.Printf("Switching to: %s\n", activeRelay)
+
+		log.Println("Connecting")
 		check(exec.Command(wgQuick, "up", path.Join(confDir, activeRelay+".conf")).Run())
+		log.Println("Setting up iptables rules")
+		check(iptablesSetup(activeRelay))
+		log.Println("Done")
 
 		jsonBytes, err := json.Marshal(Relay{Server: relay.Server})
 		check(err)

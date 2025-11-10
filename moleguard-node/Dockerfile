@@ -13,9 +13,8 @@ RUN apk add python3 py3-cryptography
 
 COPY --from=builder /root/moleguard-node/moleguard-node /root/moleguard-node
 COPY ./etc/ /etc/
-COPY entry.sh /root/entry.sh
 COPY wg-tools/wg-mullvad.py /root/wg-mullvad.py
 
-RUN chmod +x /root/*.sh /root/moleguard-node
+RUN chmod +x /root/moleguard-node
 RUN sed -i 's/qrencode.*//g' /etc/s6-overlay/s6-rc.d/init-wireguard-confs/run
 ENTRYPOINT [ "/init" ]

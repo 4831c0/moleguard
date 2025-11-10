@@ -1,7 +1,13 @@
 #!/usr/bin/with-contenv bash
 # shellcheck shell=bash
 
+cat /etc/wireguard/wg0.conf | grep "FwMark" || (sed -i 's/\[Interface\]/\[Interface\]\nFwMark = 51820/g' /etc/wireguard/wg0.conf && wg-quick down wg0 && wg-quick up wg0)
 python3 /root/wg-mullvad.py --account $MULLVAD_ACCOUNT_NUMBER
+cd /root/.config/mullvad/wg0
+
+for file in *.conf; do
+    sed -i 's/$$Interface$$/$$Interface$$\nFwMark = 51820/g' "$file"
+done
 
 cd /root
 ./moleguard-node
