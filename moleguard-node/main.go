@@ -17,6 +17,14 @@ import (
 
 var wgQuick = "/usr/bin/wg-quick"
 var iptables = "/usr/sbin/iptables"
+var mullvadUpgradeTunnel string
+
+func init() {
+	wd, err := os.Getwd()
+	check(err)
+
+	mullvadUpgradeTunnel = path.Join(wd, "mullvad-upgrade-tunnel")
+}
 
 func check(err error) {
 	if err != nil {
@@ -73,6 +81,7 @@ func main() {
 
 	check(downAll(confDir))
 	check(run(wgQuick, "up", path.Join(confDir, activeRelay+".conf")))
+	check(run(mullvadUpgradeTunnel, "-wg-interface", activeRelay))
 	check(iptablesSetup(activeRelay))
 
 	go func() {

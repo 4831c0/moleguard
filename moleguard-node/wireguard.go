@@ -100,5 +100,11 @@ func mullvadChange(relay string, confDir string) error {
 	}
 
 	log.Println("Enabling mullvad")
-	return run(wgQuick, "up", path.Join(confDir, activeRelay+".conf"))
+	err = run(wgQuick, "up", path.Join(confDir, activeRelay+".conf"))
+	if err != nil {
+		return err
+	}
+
+	log.Println("Upgrading tunnel to post quantum-tunnel")
+	return run(mullvadUpgradeTunnel, "-wg-interface", activeRelay)
 }
