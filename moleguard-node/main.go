@@ -1,19 +1,17 @@
 package main
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"math/big"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path"
 	"strings"
 	"sync"
+	"time"
 )
 
 var wgQuick = "/usr/bin/wg-quick"
@@ -29,55 +27,6 @@ type Relay struct {
 	Server string `json:"server"`
 }
 
-func ipv4ToUint32(ipStr string) (uint32, error) {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return 0, fmt.Errorf("invalid IP")
-	}
-	ip = ip.To4()
-	if ip == nil {
-		return 0, fmt.Errorf("not an IPv4 address")
-	}
-	return binary.BigEndian.Uint32(ip), nil
-}
-
-func uint32ToIPv4(n uint32) (string, error) {
-	if n > 0xFFFFFFFF {
-		return "", fmt.Errorf("number out of range")
-	}
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, n)
-	return net.IP(b).String(), nil
-}
-
-func ipv6ToBigInt(ipStr string) (*big.Int, error) {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return nil, fmt.Errorf("invalid IP")
-	}
-	ip = ip.To16()
-	if ip == nil || ip.To4() != nil {
-		return nil, fmt.Errorf("not an IPv6 address")
-	}
-	bi := new(big.Int).SetBytes(ip)
-	return bi, nil
-}
-
-func bigIntToIPv6(n *big.Int) (string, error) {
-	if n.Sign() < 0 {
-		return "", fmt.Errorf("negative value")
-	}
-	if n.BitLen() > 128 {
-		return "", fmt.Errorf("number out of range")
-	}
-	b := n.FillBytes(make([]byte, 16))
-	ip := net.IP(b)
-	if ip.To4() != nil {
-		return "", fmt.Errorf("constructed address is IPv4-mapped")
-	}
-	return ip.String(), nil
-}
-
 func run(c string, args ...string) error {
 	cmd := exec.Command(c, args...)
 	cmd.Stdout = os.Stdout
@@ -86,81 +35,32 @@ func run(c string, args ...string) error {
 	return cmd.Run()
 }
 
-func downAll(confDir string) error {
-	files, err := os.ReadDir(confDir)
-	if err != nil {
-		return err
-	}
-
-	for _, file := range files {
-		_ = exec.Command(wgQuick, "down", path.Join(confDir, file.Name())).Run()
-	}
-
-	return nil
-}
-
-func iptablesSetup(newRelay string) error {
-	// Forwarding
-	if err := exec.Command(iptables, "-A", "FORWARD", "-o", "eth0@if20", "!", "-d", "10.13.13.1/24", "-j", "REJECT").Run(); err != nil {
-		return err
-	}
-	if err := exec.Command(iptables, "-A", "FORWARD", "-i", newRelay, "-j", "ACCEPT").Run(); err != nil {
-		return err
-	}
-	if err := exec.Command(iptables, "-A", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run(); err != nil {
-		return err
-	}
-	if err := exec.Command(iptables, "-A", "FORWARD", "-j", "REJECT").Run(); err != nil {
-		return err
-	}
-
-	// NAT
-
-	if err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "eth0@if20", "-j", "MASQUERADE").Run(); err != nil {
-		return err
-	}
-	if err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", newRelay, "-j", "MASQUERADE").Run(); err != nil {
-		return err
-	}
-
-	return nil
-}
-func iptablesTeardown(oldRelay string) error {
-	// Forwarding
-	if err := exec.Command(iptables, "-D", "FORWARD", "-o", "eth0@if20", "!", "-d", "10.13.13.1/24", "-j", "REJECT").Run(); err != nil {
-		return err
-	}
-	if err := exec.Command(iptables, "-D", "FORWARD", "-i", oldRelay, "-j", "ACCEPT").Run(); err != nil {
-		return err
-	}
-	if err := exec.Command(iptables, "-D", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run(); err != nil {
-		return err
-	}
-	if err := exec.Command(iptables, "-D", "FORWARD", "-j", "REJECT").Run(); err != nil {
-		return err
-	}
-
-	// NAT
-
-	if err := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "eth0@if20", "-j", "MASQUERADE").Run(); err != nil {
-		return err
-	}
-	if err := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", oldRelay, "-j", "MASQUERADE").Run(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func main() {
 	token := os.Getenv("TOKEN")
-	// mullvadAccountNumber := os.Getenv("MULLVAD_ACCOUNT_NUMBER")
-	activeRelay := os.Getenv("DEFAULT_RELAY")
+	defaultRelay := os.Getenv("DEFAULT_RELAY")
 	confDir := path.Join(os.Getenv("HOME"), ".config", "mullvad", "wg0")
+
+	activeRelay = defaultRelay
 
 	check(downAll(confDir))
 	check(run(wgQuick, "up", path.Join(confDir, activeRelay+".conf")))
 	check(iptablesSetup(activeRelay))
+
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+
+			resp, err := http.Get("https://1.1.1.1")
+			if err != nil {
+				log.Println("Failed to reach 1.1.1.1")
+				log.Println("Reconnecting to mullvad")
+				check(mullvadChange(activeRelay, confDir))
+				time.Sleep(10 * time.Second)
+			}
+
+			resp.Body.Close()
+		}
+	}()
 
 	i := 0
 	maxI := 0
@@ -202,18 +102,8 @@ func main() {
 		var relay Relay
 		check(json.Unmarshal(body, &relay))
 
-		log.Println("Tearing down old iptables rules")
-		check(iptablesTeardown(activeRelay))
-		log.Println("Disconnecting from all relays")
-		check(downAll(confDir))
-
-		activeRelay = relay.Server
 		log.Printf("Switching to: %s\n", activeRelay)
-
-		log.Println("Connecting")
-		check(exec.Command(wgQuick, "up", path.Join(confDir, activeRelay+".conf")).Run())
-		log.Println("Setting up iptables rules")
-		check(iptablesSetup(activeRelay))
+		check(mullvadChange(relay.Server, confDir))
 		log.Println("Done")
 
 		jsonBytes, err := json.Marshal(Relay{Server: relay.Server})
