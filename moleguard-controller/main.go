@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 )
 
 type NodeConfig struct {
@@ -136,6 +137,8 @@ func getNextFreeId(node string) (int, error) {
 	return -1, errors.New("could not find a free id")
 }
 
+var deviceMu sync.RWMutex
+
 func main() {
 	var config Config
 	configBytes, err := os.ReadFile("config.json")
@@ -248,6 +251,9 @@ func main() {
 		w.Write(respBytes)
 	})))
 	mux.Handle("GET /{node}/device", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deviceMu.RLock()
+		defer deviceMu.RUnlock()
+
 		rows, err := db.Query("select id, user_token, config, ip from device where node = ? and user_token = ?",
 			r.PathValue("node"),
 			r.Header.Get("Authorization"),
@@ -274,6 +280,9 @@ func main() {
 		w.Write(devicesJson)
 	})))
 	mux.Handle("POST /{node}/device", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deviceMu.Lock()
+		defer deviceMu.Unlock()
+
 		node, ok := config.Nodes[r.PathValue("node")]
 
 		if !ok {
@@ -316,6 +325,9 @@ func main() {
 		w.Write([]byte(fmt.Sprintf("%d", id)))
 	})))
 	mux.Handle("DELETE /{node}/device", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deviceMu.Lock()
+		defer deviceMu.Unlock()
+
 		reqBytes, err := io.ReadAll(r.Body)
 		check(err)
 
