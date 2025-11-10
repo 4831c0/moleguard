@@ -26,25 +26,25 @@ func downAll(confDir string) error {
 
 func iptablesSetup(newRelay string) error {
 	// Forwarding
-	if err := exec.Command(iptables, "-A", "FORWARD", "-o", "eth0@if20", "!", "-d", "10.13.13.1/24", "-j", "REJECT").Run(); err != nil {
+	if err := run(iptables, "-A", "FORWARD", "-o", "eth0@if20", "!", "-d", "10.13.13.1/24", "-j", "REJECT"); err != nil {
 		return err
 	}
-	if err := exec.Command(iptables, "-A", "FORWARD", "-i", newRelay, "-j", "ACCEPT").Run(); err != nil {
+	if err := run(iptables, "-A", "FORWARD", "-i", newRelay, "-j", "ACCEPT"); err != nil {
 		return err
 	}
-	if err := exec.Command(iptables, "-A", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run(); err != nil {
+	if err := run(iptables, "-A", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"); err != nil {
 		return err
 	}
-	if err := exec.Command(iptables, "-A", "FORWARD", "-j", "REJECT").Run(); err != nil {
+	if err := run(iptables, "-A", "FORWARD", "-j", "REJECT"); err != nil {
 		return err
 	}
 
 	// NAT
 
-	if err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "eth0@if20", "-j", "MASQUERADE").Run(); err != nil {
+	if err := run("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "eth0@if20", "-j", "MASQUERADE"); err != nil {
 		return err
 	}
-	if err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", newRelay, "-j", "MASQUERADE").Run(); err != nil {
+	if err := run("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", newRelay, "-j", "MASQUERADE"); err != nil {
 		return err
 	}
 
@@ -53,25 +53,25 @@ func iptablesSetup(newRelay string) error {
 
 func iptablesTeardown(oldRelay string) error {
 	// Forwarding
-	if err := exec.Command(iptables, "-D", "FORWARD", "-o", "eth0@if20", "!", "-d", "10.13.13.1/24", "-j", "REJECT").Run(); err != nil {
+	if err := run(iptables, "-D", "FORWARD", "-o", "eth0@if20", "!", "-d", "10.13.13.1/24", "-j", "REJECT"); err != nil {
 		return err
 	}
-	if err := exec.Command(iptables, "-D", "FORWARD", "-i", oldRelay, "-j", "ACCEPT").Run(); err != nil {
+	if err := run(iptables, "-D", "FORWARD", "-i", oldRelay, "-j", "ACCEPT"); err != nil {
 		return err
 	}
-	if err := exec.Command(iptables, "-D", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run(); err != nil {
+	if err := run(iptables, "-D", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"); err != nil {
 		return err
 	}
-	if err := exec.Command(iptables, "-D", "FORWARD", "-j", "REJECT").Run(); err != nil {
+	if err := run(iptables, "-D", "FORWARD", "-j", "REJECT"); err != nil {
 		return err
 	}
 
 	// NAT
 
-	if err := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "eth0@if20", "-j", "MASQUERADE").Run(); err != nil {
+	if err := run("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", "eth0@if20", "-j", "MASQUERADE"); err != nil {
 		return err
 	}
-	if err := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", oldRelay, "-j", "MASQUERADE").Run(); err != nil {
+	if err := run("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", oldRelay, "-j", "MASQUERADE"); err != nil {
 		return err
 	}
 
@@ -94,11 +94,11 @@ func mullvadChange(relay string, confDir string) error {
 	activeRelay = relay
 
 	log.Println("Setting up new iptables rules")
-	err = exec.Command(wgQuick, "up", path.Join(confDir, activeRelay+".conf")).Run()
+	err = iptablesSetup(activeRelay)
 	if err != nil {
 		return err
 	}
 
-	log.Println("Setting up new iptables rules")
-	return iptablesSetup(activeRelay)
+	log.Println("Enabling mullvad")
+	return run(wgQuick, "up", path.Join(confDir, activeRelay+".conf"))
 }
