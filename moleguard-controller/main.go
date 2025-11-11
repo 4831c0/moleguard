@@ -250,6 +250,16 @@ func main() {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write(respBytes)
 	})))
+	_, err = os.Stat("chisel.json")
+	if err == nil {
+		mux.Handle("GET /chisel.json", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			respBytes, err := os.ReadFile("chisel.json")
+			check(err)
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(respBytes)
+		})))
+	}
 	mux.Handle("GET /{node}/device", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		deviceMu.RLock()
 		defer deviceMu.RUnlock()
