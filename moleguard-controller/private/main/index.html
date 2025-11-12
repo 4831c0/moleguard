@@ -104,7 +104,18 @@
                 devicesHtml += `<p>${escape(device.id.toString())}. ${escape(device.ip)} <button onclick="window.downloadConfig('${escape(nodeId)}', ${i});">Download config</button> <button onclick="window.deleteDevice('${escape(nodeId)}', ${device.id})">Remove device</button></p>`;
             }
 
-            html += `<div>
+            html += `<h2>Client installation</h2>
+<code>
+git clone https://github.com/4831c0/moleguard<br />
+cd moleguard/moleguard-daemon<br />
+./install.sh<br />
+<br />
+moleguard-client -node node-1 # This will generate the initial config file and connect to node-1
+</code>
+
+<hr />
+
+<div>
 <h3>${escape(nodeId)} - ${escape(node.server)}</h3>
 <p>Public key: ${pk}</p>
 <button onclick="window.changeRelay('${escape(nodeId)}', '${escape(nodeId)}-relay');">Change relay</button> ${relayDropdown.replace('<select>', '<select id="' + escape(nodeId) + '-relay">').replace('<option value="' + escape(node.server) + '">', '<option value="' + escape(node.server) + '" selected="selected">')} <br />
