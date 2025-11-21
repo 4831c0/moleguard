@@ -61,13 +61,13 @@ func runChisel() {
 
 	client, err := chclient.NewClient(&config)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 
 	for {
 		err = client.Run()
-		fmt.Println(err)
+		log.Println(err)
 		time.Sleep(time.Second * 5)
 	}
 }
@@ -112,8 +112,40 @@ func initChisel(state common.State) {
 	check(os.WriteFile(common.MoleguardChisel, respBytes, 0600))
 }
 
+func failsafe() {
+	systemctl, err := exec.LookPath("systemctl")
+	if err != nil {
+		log.Println("WARNING! systemctl is not installed, failsafe cannot be initialized")
+		return
+	}
+
+	f := 0
+	for {
+		if f >= 5 {
+			log.Println("Ping timed out more than 5 times, running systemctl restart")
+			break
+		}
+
+		sock, err := net.DialTimeout("tcp", "1.1.1.1:443", time.Second*5)
+		if err == nil {
+			f = 0
+			_ = sock.Close()
+		} else {
+			f++
+			log.Printf("Ping failed %d\n", f)
+			continue
+		}
+
+		time.Sleep(time.Second * 10)
+	}
+
+	_ = exec.Command(systemctl, "restart", "moleguard-daemon.service").Run()
+}
+
 func main() {
 	var state common.State
+
+	go failsafe()
 
 	http.DefaultTransport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if addr == state.VpnHost+":443" {
