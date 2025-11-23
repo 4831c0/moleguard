@@ -1,13 +1,15 @@
 package common
 
 type State struct {
-	IP        string         `json:"ip"`
-	VpnHost   string         `json:"vpn_host"`
-	FrontHost string         `json:"front_host"`
-	Token     string         `json:"token"`
-	NodeCache []string       `json:"nodes"`
-	Slots     map[string]int `json:"slots"`
-	LastNode  string         `json:"last_node"`
+	IP            string         `json:"ip"`
+	VpnHost       string         `json:"vpn_host"`
+	FrontHost     string         `json:"front_host"`
+	Token         string         `json:"token"`
+	NodeCache     []string       `json:"nodes"`
+	Slots         map[string]int `json:"slots"`
+	LastNode      string         `json:"last_node"`
+	Chisel        bool           `json:"chisel"`
+	CIDRBlacklist []string       `json:"cidr_blacklist"`
 }
 
 type Device struct {

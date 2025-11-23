@@ -120,10 +120,10 @@ func failsafe() {
 	}
 
 	f := 0
-	max := 2
+	m := 2
 	for {
-		if f >= max {
-			log.Printf("Ping timed out more than %d times, running systemctl restart", max)
+		if f >= m {
+			log.Printf("Ping timed out more than %d times, running systemctl restart", m)
 			break
 		}
 
@@ -319,14 +319,20 @@ func main() {
 
 			confStr := device.Config
 
-			ipInt, err := common.IPv4ToUint32(state.IP)
-			check(err)
+			var blacklist []string
 
-			cidrPairs := common.BuildCIDRsExcept(ipInt)
+			if state.Chisel {
+				blacklist = append(blacklist, state.IP+"/32")
+			}
+			blacklist = append(blacklist, state.CIDRBlacklist...)
+
+			cidrPairs := common.BuildCIDRsExcept(blacklist...)
 			cidrStr := common.JoinCIDRs(cidrPairs)
 
 			confStr = strings.ReplaceAll(confStr, "AllowedIPs = 0.0.0.0/0", "AllowedIPs = "+cidrStr)
-			confStr = strings.ReplaceAll(confStr, "109.122.216.14:", "127.0.0.1:")
+			if state.Chisel {
+				confStr = strings.ReplaceAll(confStr, state.IP+":", "127.0.0.1:")
+			}
 
 			err = os.WriteFile(confModPath, []byte(confStr), 0600)
 			check(err)

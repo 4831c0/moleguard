@@ -14,6 +14,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/4831c0/moleguard/common"
 )
@@ -31,6 +32,7 @@ func init() {
 	check(err)
 
 	sockClient = http.Client{
+		Timeout: time.Second * 5,
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 				return conn, nil
@@ -95,9 +97,14 @@ func getBytes(path string) ([]byte, error) {
 
 func main() {
 	var fReset bool
+	var fChisel bool
+	var fCidrBlacklist string
 	var fNode string
 
 	flag.BoolVar(&fReset, "reset", false, "reset all state")
+	flag.BoolVar(&fChisel, "chisel", true, "proxy traffic through chisel")
+	flag.StringVar(&fCidrBlacklist, "cidr-blacklist", "", "CIDRs to blacklist, seperated by "+
+		"commas, ex.: \"1.1.1.1/32,192.168.0.1/24\"")
 	flag.StringVar(&fNode, "node", "", "node to connect to")
 
 	flag.Parse()
@@ -161,6 +168,20 @@ func main() {
 		}
 	}
 
+	if state.Chisel != fChisel {
+		confUpdate = true
+		state.Chisel = fChisel
+	}
+
+	if (fCidrBlacklist == "" && len(state.CIDRBlacklist) != 0) || fCidrBlacklist != "" {
+		confUpdate = true
+		if fCidrBlacklist == "" {
+			state.CIDRBlacklist = make([]string, 0)
+		} else {
+			state.CIDRBlacklist = strings.Split(fCidrBlacklist, ",")
+		}
+	}
+
 	if confUpdate {
 		fmt.Println("Updating config")
 		check(updateConfig(&state))
@@ -212,15 +233,16 @@ func main() {
 	fmt.Println("Nodes:")
 	activeNode := ""
 	for _, node := range nodes {
-		fmt.Print("- ")
-		fmt.Print(node)
-
 		if strings.Contains(wgState, "interface: wg-"+node+"\n") {
-			fmt.Print(" [active]")
 			activeNode = node
 		}
-		fmt.Println()
 	}
+	sc := state
+	sc.Token = ""
+	f, err := json.MarshalIndent(&sc, "", "    ")
+	check(err)
+
+	fmt.Println(string(f))
 
 	if activeNode != "" {
 		fmt.Printf("Disconnecting from %s\n", activeNode)
