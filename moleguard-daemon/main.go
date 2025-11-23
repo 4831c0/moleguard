@@ -120,19 +120,25 @@ func failsafe() {
 	}
 
 	f := 0
+	max := 2
 	for {
-		if f >= 5 {
-			log.Println("Ping timed out more than 5 times, running systemctl restart")
+		if f >= max {
+			log.Printf("Ping timed out more than %d times, running systemctl restart", max)
 			break
 		}
 
-		sock, err := net.DialTimeout("tcp", "1.1.1.1:443", time.Second*5)
+		start := time.Now()
+		sock, err := net.DialTimeout("tcp", "1.1.1.1:443", time.Second*3)
 		if err == nil {
 			f = 0
 			_ = sock.Close()
 		} else {
 			f++
 			log.Printf("Ping failed %d\n", f)
+			duration := time.Since(start)
+			if duration < time.Second*2 {
+				time.Sleep(time.Second * 3)
+			}
 			continue
 		}
 
